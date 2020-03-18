@@ -4,7 +4,7 @@
 namespace
 {
   std::string extractCameraName(const std::string& name);
-  sensor_msgs::CameraInfo cameraInfo(const sensor_msgs::Image& image, float horizontal_fov);
+  sensor_msgs::CameraInfo cameraInfo(const sensor_msgs::Image& image, float horizontal_fov, std::string camera_id);
 }
 
 namespace gazebo
@@ -93,7 +93,7 @@ void GazeboRosRealsense::OnNewFrame(const rendering::CameraPtr cam,
   };
 
   // publish to ROS
-  auto camera_info_msg = cameraInfo(this->image_msg_, cameras.at(camera_id)->HFOV().Radian());
+  auto camera_info_msg = cameraInfo(this->image_msg_, cameras.at(camera_id)->HFOV().Radian(), camera_id);
   image_pub->publish(this->image_msg_, camera_info_msg);
 }
 
@@ -124,7 +124,7 @@ void GazeboRosRealsense::OnNewDepthFrame()
     reinterpret_cast<const void*>(this->depthMap.data()));
 
   // publish to ROS
-  auto depth_info_msg = cameraInfo(this->depth_msg_, this->depthCam->HFOV().Radian());
+  auto depth_info_msg = cameraInfo(this->depth_msg_, this->depthCam->HFOV().Radian(), DEPTH_CAMERA_NAME);
   this->depth_pub_.publish(this->depth_msg_, depth_info_msg);
 }
 
@@ -142,7 +142,7 @@ namespace
     return COLOR_CAMERA_NAME;
   }
 
-  sensor_msgs::CameraInfo cameraInfo(const sensor_msgs::Image& image, float horizontal_fov)
+  sensor_msgs::CameraInfo cameraInfo(const sensor_msgs::Image& image, float horizontal_fov,  std::string camera_id)
   {
     sensor_msgs::CameraInfo info_msg;
 
@@ -163,6 +163,19 @@ namespace
     info_msg.P[2] = info_msg.K[2];
     info_msg.P[6] = info_msg.K[5];
     info_msg.P[10] = info_msg.K[8];
+
+
+    // https://github.com/introlab/rtabmap_ros/issues/93
+    // Stereo baseline (distance from ired1 (right camera) to ired2 (left camera)) is computed as:
+    //   -P(0,3)/P(0,0) = baseline = 7cm (looking in realsense-RS200.macro.xacro)
+    if (camera_id == IRED1_CAMERA_NAME)
+      info_msg.P[3] = - 0.07 * focal;
+    else
+      info_msg.P[3] = 0;
+
+    // no distortions
+    info_msg.distortion_model = "plumb_bob";
+    info_msg.D = {0, 0, 0, 0, 0};
 
     return info_msg;
   }
